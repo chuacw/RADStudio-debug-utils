@@ -45,109 +45,6 @@ def is_int_literal(s: str) -> bool:
     except ValueError:
         return False
 
-# def x86_cond_jump_target_from_inst(target: lldb.SBTarget,
-#                                   inst: lldb.SBInstruction,
-#                                   *,
-#                                   prefer_file_addr: bool = False) -> int:
-#     """
-#     If `inst` is an x86 conditional jump (Jcc), return its resolved target address.
-#     Computes the target from the instruction bytes (rel8/rel32), not from GetOperands().
-#
-#     Args:
-#         target: SBTarget (needed for address resolution / memory reads).
-#         inst: SBInstruction to analyze.
-#         prefer_file_addr: If True, compute using file addresses (SBAddress.GetFileAddress()).
-#                           Otherwise compute using load addresses (SBAddress.GetLoadAddress()).
-#
-#     Returns:
-#         int target address, or None if not a conditional jump or cannot decode.
-#     """
-#     if not target or not target.IsValid() or not inst or not inst.IsValid():
-#         return None
-#
-#     # Fast gate: LLDB already classifies cond jumps for most targets.
-#     if inst.GetControlFlowKind(target) != lldb.eInstructionControlFlowKindCondJump:
-#         return None
-#
-#     addr = inst.GetAddress()
-#     if not addr or not addr.IsValid():
-#         return None
-#
-#     pc = addr.GetFileAddress() if prefer_file_addr else addr.GetLoadAddress(target)
-#     if pc in (None, lldb.LLDB_INVALID_ADDRESS):
-#         return None
-#
-#     # Read enough bytes to cover both encodings:
-#     #  - short Jcc: 2 bytes
-#     #  - near  Jcc: 6 bytes (0F 8x + imm32)
-#     err = lldb.SBError()
-#     insn_bytes = target.ReadMemory(addr, 6, err)
-#     if not err.Success() or not insn_bytes:
-#         return None
-#
-#     # Ensure we can index bytes (ReadMemory returns a Python bytes/bytearray on most builds)
-#     b = insn_bytes if isinstance(insn_bytes, (bytes, bytearray)) else bytes(insn_bytes)
-#
-#     op0 = b[0]
-#
-#     # short Jcc rel8: 70..7F  (je=74, jne=75, etc.)
-#     if 0x70 <= op0 <= 0x7F:
-#         if len(b) < 2:
-#             return None
-#         disp = int.from_bytes(b[1:2], byteorder="little", signed=True)
-#         insn_len = 2
-#         return pc + insn_len + disp
-#
-#     # near Jcc rel32: 0F 80..8F
-#     if op0 == 0x0F:
-#         if len(b) < 6:
-#             return None
-#         op1 = b[1]
-#         if 0x80 <= op1 <= 0x8F:
-#             disp = int.from_bytes(b[2:6], byteorder="little", signed=True)
-#             insn_len = 6
-#             return pc + insn_len + disp
-#
-#     # Some other conditional form or we couldn't decode it here.
-#     return None
-#
-# def cmd_get_operands(debugger, command, exe_ctx, result, internal_dict):
-#     global debug_mode
-#     target = exe_ctx.target
-#     frame = exe_ctx.frame
-#     if not target or not target.IsValid():
-#         result.PutCString("No valid target.")
-#         return
-#
-#     cmd = command.strip()
-#     if not cmd:
-#         result.PutCString("Usage: get_operands <address>")
-#         return
-#     cmd_args = command.strip().split()
-#     if len(cmd_args) < 1:
-#         result.PutCString("Usage: get_operands <address> [debug]")
-#         return
-#     debug_mode = len(cmd_args) > 1 and cmd_args[1] == "debug"
-#
-#     addr = int(cmd_args[0], 0)
-#     sb_addr = target.ResolveFileAddress(addr)
-#     # Read raw bytes from memory; this returns a Python bytes object on your build
-#     err = lldb.SBError()
-#     buf = target.ReadMemory(sb_addr, 32, err)  # 32 bytes is enough for one instruction
-#
-#     inst_list = target.GetInstructions(sb_addr, buf)
-#     if inst_list.GetSize() == 0:
-#         return
-#
-#     inst = inst_list.GetInstructionAtIndex(0)
-#     if debug_mode:
-#         result.PutCString("DEBUG: cmd_get_operands inst: %s" % inst)
-#     if not inst or not inst.IsValid():
-#         return
-#
-#     operands_str = inst.GetOperands(target)
-#     result.PutCString("cmd_get_operands Operands: %s" % operands_str)
-
 def cmd_get_arch_name(debugger, command, exe_ctx, result, internal_dict):
     target = exe_ctx.target
     arch = _get_arch_name(target)
@@ -198,49 +95,6 @@ def _is_branch_or_call_kind(controlFlowKind):
     )
     return kind
 
-# def _is_branch_or_call_mnemonic(mnemonic, arch):
-#     m = mnemonic.lower()
-#
-#     x86_br = {
-#         "call",
-#         "jmp",
-#         "ja", "jae", "jb", "jbe", "jc", "jcxz",
-#         "je", "jz", "jne", "jnz",
-#         "jg", "jge", "jl", "jle",
-#         "jo", "jno", "js", "jns",
-#         "jp", "jpe", "jnp", "jpo",
-#         "jrcxz",
-#     }
-#
-#     arm_br = {
-#         "b", "bl", "bx", "blx",
-#         "cbz", "cbnz", "tbz", "tbnz",
-#         "beq", "bne", "bhs", "bcs", "blo", "bcc",
-#         "bmi", "bpl", "bvs", "bvc",
-#         "bhi", "bls", "bge", "blt", "bgt", "ble",
-#         "braa", "brab", "blraa", "blrab",
-#     }
-#
-#     rv_br = {
-#         "jal", "jalr", "beq", "bne", "blt", "bge", "bltu", "bgeu",
-#     }
-#
-#     if arch in ARCH_X86:
-#         # Normalize x86 mnemonics: GetMnemonic() often returns AT&T suffixes (callq, jmpl)
-#         # even if the flavor is Intel.
-#         if m in ("calll", "callq"):
-#             m = "call"
-#         elif m in ("jmpl", "jmpq"):
-#             m = "jmp"
-#         return m in x86_br
-#     elif arch in ARCH_ARM:
-#         return m in arm_br
-#     elif arch in ARCH_ARM64:
-#         return m in arm_br
-#     else:
-#         return m in x86_br or m in arm_br or m in rv_br
-#
-
 def is_branch_or_call_at_addr(target, addr_load, flavor, frame=None, result_out=None):
     """
     Given an lldb.SBTarget and a load address (integer),
@@ -262,7 +116,6 @@ def is_branch_or_call_at_addr(target, addr_load, flavor, frame=None, result_out=
     arch = _get_arch_name(target)
     if debug_mode and result_out:
         result_out.PutCString("DEBUG: is_branch_or_call_at_addr arch: %s" % arch)
-
 
     # sb_addr = target.ResolveLoadAddress(addr_load)
     sb_addr = target.ResolveFileAddress(addr_load)
@@ -405,6 +258,8 @@ def is_branch_or_call_at_addr(target, addr_load, flavor, frame=None, result_out=
             # Case 1: Register-indirect with optional displacement "*(%edx)", "*-0x8(%ebp)"
             # equivalent to [EDX], [EBP-8]
             if "(%" in expr and expr.endswith(")"):
+                if debug_mode and result_out:
+                    result_out.PutCString("Handling case 1)")
                 indirect = True
                 idx_open = expr.rfind("(")
                 # part before '(' is displacement
@@ -433,21 +288,23 @@ def is_branch_or_call_at_addr(target, addr_load, flavor, frame=None, result_out=
             # Case 2: Absolute indirect "*0xb15a0" -> read memory at 0xb15a0
             elif expr.startswith("0x") or (len(expr) > 0 and expr[0].isdigit()) or expr.startswith("-"):
                 if debug_mode and result_out:
-                    result_out.PutCString("DEBUG: ATT syntax, absolute indirect: %s" % expr)
+                    result_out.PutCString("DEBUG: AT&T syntax, absolute indirect: %s" % expr)
                 indirect = True
                 try:
                     ptr_addr = int(expr, 0)
                     if debug_mode and result_out:
-                        result_out.PutCString("DEBUG: ATT syntax, absolute addr: 0x%x" % ptr_addr)
+                        result_out.PutCString("DEBUG: AT&T syntax, absolute addr: 0x%x" % ptr_addr)
                 except ValueError:
                     ptr_addr = None
 
             # Case 3: Direct register "*%eax" -> equivalent to Intel "call eax" (not [eax])
             elif expr.startswith("%"):
+                if debug_mode and result_out:
+                    result_out.PutCString("DEBUG: AT&T syntax, direct register: %s" % expr)
                 indirect = False
                 reg_name = expr.lstrip("%")
                 if debug_mode and result_out:
-                    result_out.PutCString("DEBUG: ATT syntax, direct register: %s" % reg_name)
+                    result_out.PutCString("DEBUG: AT&T syntax, direct register: %s" % reg_name)
                 val = _resolve_register_value(frame, reg_name)
                 if val is not None:
                     target_addr = val
@@ -473,6 +330,8 @@ def is_branch_or_call_at_addr(target, addr_load, flavor, frame=None, result_out=
                     result_out.PutCString("target_addr = %s" % target_addr)
 
         if ptr_addr is not None and indirect:
+            if debug_mode and result_out:
+                result_out.PutCString("ptr_addr is not None and indirect")
             err = lldb.SBError()
             target_addr_size = target.GetAddressByteSize() # 32-bit vs 64-bit
             sb_mem_addr = target.ResolveLoadAddress(ptr_addr)
@@ -544,12 +403,13 @@ def is_branch_or_call_at_addr(target, addr_load, flavor, frame=None, result_out=
     # --- 5) Register-direct handling for x86/x64 (e.g. "jmp rax") ---
     if target_addr is None and arch in ARCH_X86 and frame is not None:
         # Try resolving 'cand' as a register name directly
+        if debug_mode and result_out:
+            result_out.PutCString("Handling case 5)")
         val = _resolve_register_value(frame, cand)
         if val is not None:
             target_addr = val
 
     return (True, target_addr)
-
 
 def cmd_is_branch_or_call(debugger, command, exe_ctx, result, internal_dict):
     """
