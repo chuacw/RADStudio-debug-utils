@@ -614,7 +614,6 @@ def cmd_follow(debugger, command, exe_ctx, result, internal_dict):
         if di_sent:
             cmd_line = f"di -s 0x{tgt:x}"
             ci.HandleCommand(cmd_line, res)
-            # result.PutCString(f"DEBUG: ran: {cmd_line}")
             if res.GetOutput():
                 result.PutCString(res.GetOutput())
             if res.GetError():
